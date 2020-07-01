@@ -27,22 +27,19 @@ public class Yolo {
 
 	public static void main(String[] args) throws InterruptedException {
 		System.load("D:\\OpenCV\\opencv\\build\\java\\x64\\opencv_java430.dll");
+		VideoCapture cap = new VideoCapture(); // Load video using the videocapture OpenCV class//
+		cap.open(filePath);
 		String modelWeights = "D:\\OpenCV\\yolov3-tiny.weights";
 		String modelConfiguration = "D:\\OpenCV\\yolov3-tiny.cfg";
-		
-		
-		VideoCapture cap = new VideoCapture();
-		cap.open(filePath);
-		
 		Net net = Dnn.readNetFromDarknet(modelConfiguration, modelWeights);
-		
 		JFrame jframe = new JFrame("Video"); 
+
 		jframe.setContentPane(vidpanel);
 		jframe.setSize(1920, 1080);
-		jframe.setVisible(true);
+		jframe.setVisible(true);// we instantiate the frame here//
 
-		
 		Runnable frameGrabber = new Runnable() {
+
 			@Override
 			public void run() {
 				Mat frame = grabFrame(cap, net);
@@ -52,20 +49,23 @@ public class Yolo {
 			}
 		};
 		timer = Executors.newSingleThreadScheduledExecutor();
-		timer.scheduleAtFixedRate(frameGrabber, 0, 33, TimeUnit.MILLISECONDS); //process each frame at frame rate of vid
+		timer.scheduleAtFixedRate(frameGrabber, 0, 33, TimeUnit.MILLISECONDS);
 	}
 
 	private static List<String> getOutputNames(Net net) { //not mine
 		List<String> names = new ArrayList<>();
+
 		List<Integer> outLayers = net.getUnconnectedOutLayers().toList();
 		List<String> layersNames = net.getLayerNames();
 
-		outLayers.forEach((item) -> names.add(layersNames.get(item - 1)));
+		outLayers.forEach((item) -> names.add(layersNames.get(item - 1)));// unfold and create R-CNN layers from the
+																			// loaded YOLO model//
 		return names;
 	}
 
 	private static Mat grabFrame(VideoCapture cap, Net net) { //not completely mine, partially from openCV demo
 		Mat frame = new Mat();
+
 		if (cap.isOpened()) {
 			try {
 				cap.read(frame);
@@ -80,7 +80,8 @@ public class Yolo {
 	}
 
 	private static void analyzeFrame(VideoCapture cap, Mat frame, Net net) {
-		Size sz = new Size(416, 416);
+		Size sz = new Size(256, 256);
+
 		List<Mat> result = new ArrayList<>();
 		List<Integer> clsIds = new ArrayList<>();
 		List<Float> confs = new ArrayList<>();
@@ -93,38 +94,42 @@ public class Yolo {
 		int height;
 		int left;
 		int top;
-		Mat row;
-		Mat scores;
-		Mat level;
-		Core.MinMaxLocResult mm;
-		float confidence;
-		Point classIdPoint;
 		
-		Mat blob = Dnn.blobFromImage(frame, 0.00392, sz, new Scalar(0), true);  //edit this maybe, scalar is empty rn, so no mean subtraction i think
+		/*clsIds.clear();
+		confs.clear();
+		rects.clear();*/
+
+		Mat blob = Dnn.blobFromImage(frame, 0.00392, sz, new Scalar(0), true); 
 		net.setInput(blob);
-		net.forward(result, outBlobNames); //result is a 4d tensor, images, height, width, color channels
+		net.forward(result, outBlobNames);
+
+		//outBlobNames.forEach(System.out::println);
+		// result.forEach(System.out::println);
 
 		float confThreshold = 0.6f; // Insert thresholding beyond which the model will detect objects//
 
 		for (int i = 0; i < result.size(); ++i) {
 			// each row is a candidate detection, the 1st 4 numbers are
 			// [center_x, center_y, width, height], followed by (N-4) class probabilities
-			
-			level = result.get(i); //gets i output blob image from network, now a 3d tensor, height, width, color channels
-			
+			Mat level = result.get(i);
+			Mat row;// = level.row(j);
+			Mat scores;// = row.colRange(5, level.cols());
+			Core.MinMaxLocResult mm;// = Core.minMaxLoc(scores);
+			float confidence;// = (float) mm.maxVal;
+			Point classIdPoint;// = mm.maxLoc;
 			for (int j = 0; j < level.rows(); ++j) {
-				row = level.row(j); // gets the data for the image, 
-				scores = row.colRange(5, level.cols()); //scores are class probabilities listed after the first 4 values
-				mm = Core.minMaxLoc(scores); //finds maximum score in class probabilities
-				confidence = (float) mm.maxVal; //confidence = maxVal
-				classIdPoint = mm.maxLoc; //Id index is the index of maxVal
-				
+				row = level.row(j);
+				scores = row.colRange(5, level.cols());
+				mm = Core.minMaxLoc(scores);
+				confidence = (float) mm.maxVal;
+				classIdPoint = mm.maxLoc;
 				if (confidence > confThreshold) {
-					centerX = (int) (row.get(0, 0)[0] * frame.cols()); //gets centerX from output blob and scales it for the input image
-					centerY = (int) (row.get(0, 1)[0] * frame.rows()); //same but with centerY
-					width = (int) (row.get(0, 2)[0] * frame.cols()); //same but with width
-					height = (int) (row.get(0, 3)[0] * frame.rows());//same but with height
-					left = centerX - width / 2; 
+					centerX = (int) (row.get(0, 0)[0] * frame.cols()); // scaling for drawing the bounding
+																		// boxes//
+					centerY = (int) (row.get(0, 1)[0] * frame.rows());
+					width = (int) (row.get(0, 2)[0] * frame.cols());
+					height = (int) (row.get(0, 3)[0] * frame.rows());
+					left = centerX - width / 2;
 					top = centerY - height / 2;
 
 					clsIds.add((int) classIdPoint.x);
@@ -143,8 +148,10 @@ public class Yolo {
 			MatOfRect2d boxes = new MatOfRect2d();
 			boxes.fromArray(boxesArray);
 			MatOfInt indices = new MatOfInt();
-			Dnn.NMSBoxes(boxes, confidences, confThreshold, nmsThresh, indices); //eliminates weaker classifications of same objects
-			
+			Dnn.NMSBoxes(boxes, confidences, confThreshold, nmsThresh, indices); // We draw the bounding
+																					// boxes
+																					// for
+																					// objects here//
 			System.out.println(clsIds.get(0));
 			int[] ind = indices.toArray();
 			int j = 0;
@@ -153,9 +160,11 @@ public class Yolo {
 				Rect2d box = boxesArray[idx];
 				Imgproc.rectangle(frame, box.tl(), box.br(), new Scalar(255, 255, 0), 2);
 			}
-			//drawLargestBox(boxesArray, ind, frame); //only biggest object drawn
+			//drawLargestBox(boxesArray, ind, frame);
 		}
 	}
+
+
 
 	private static void drawLargestBox(Rect2d[] boxes, int[] indices, Mat frame) {
 		double largestArea = 0;
@@ -173,8 +182,10 @@ public class Yolo {
 		Imgproc.rectangle(frame, largestBox.tl(), largestBox.br(), new Scalar(255, 200, 0), 2);
 	}
 
-
-	private static BufferedImage Mat2BufferedImage(Mat original) { //not mine, from openCV tutorial, converts a Mat into a Buff Image
+//		}
+	private static BufferedImage Mat2BufferedImage(Mat original) { // The class described here takes in matrix and
+																	// renders
+																	// the video to the frame //
 		BufferedImage image = null;
 		int width = original.width(), height = original.height(), channels = original.channels();
 		byte[] sourcePixels = new byte[width * height * channels];
